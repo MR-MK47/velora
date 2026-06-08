@@ -1,0 +1,79 @@
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-primary-container: #4d8eff;
+  --color-on-primary-container: #00285d;
+  --color-secondary-container: #4a4b53;
+  --color-on-secondary-container: #bcbbc5;
+  --color-muted-steel: #71717A;
+  --color-zinc-950: #09090B;
+  --color-deep-void: #09090B;
+  --color-charcoal-ink: #18181B;
+  --color-surface: #131315;
+  --color-surface-dim: #131315;
+  --color-surface-bright: #39393b;
+  --color-surface-container-lowest: #0e0e10;
+  --color-surface-container-low: #1c1b1d;
+  --color-surface-container: #201f22;
+  --color-surface-container-high: #2a2a2c;
+  --color-surface-container-highest: #353437;
+  --color-surface-variant: #353437;
+  --color-on-surface: #e5e1e4;
+  --color-on-surface-variant: #c2c6d6;
+  --color-outline: #8c909f;
+  --color-outline-variant: #424754;
+  --color-primary: #3B82F6;
+  --color-tertiary: #ffb786;
+  --color-zinc-50: #FAFAFA;
+  
+  --spacing-gutter: 24px;
+  --spacing-margin: 32px;
+
+  --font-cabinet: "Cabinet Grotesk", sans-serif;
+  --font-geist: "Geist", sans-serif;
+  --font-geist-mono: "Geist Mono", monospace;
+  
+  --animate-shimmer: shimmer 2s infinite linear;
+  --animate-pulse-cobalt: pulse-cobalt 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@layer utilities {
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes pulse-cobalt {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.015); }
+  }
+  .focus-ring {
+    @apply focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15;
+  }
+}
+
+body {
+  background-color: var(--color-deep-void);
+  color: var(--color-on-surface);
+  font-family: var(--font-geist);
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-cabinet);
+  letter-spacing: -0.03em;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-deep-void);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-variant);
+  border-radius: 10px;
+}
