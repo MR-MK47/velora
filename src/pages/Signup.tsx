@@ -91,21 +91,22 @@ export default function Signup() {
               <label className="text-sm font-medium text-on-surface-variant block">Work Email</label>
               <div className="relative group">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-steel group-focus-within:text-primary transition-colors" />
-                <input 
-                  type="email" 
-                  placeholder="admin@velora.io" 
-                  required
-                  className="w-full h-11 pl-10 pr-4 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-50 placeholder:text-muted-steel/50 focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15 transition-all"
-                />
+                  <input 
+                    type="email" 
+                    name="email"
+                    placeholder="admin@velora.io" 
+                    required
+                    className="w-full h-11 pl-10 pr-4 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-50 placeholder:text-muted-steel/50 focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15 transition-all"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-on-surface-variant block">Secure Password</label>
-              <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-steel group-focus-within:text-primary transition-colors" />
-                <input 
-                  type="password" 
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-on-surface-variant block">Secure Password</label>
+                <div className="relative group">
+                  <input 
+                    type="password"
+                    name="password"
                   placeholder="••••••••" 
                   required
                   minLength={8}

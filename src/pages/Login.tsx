@@ -65,10 +65,11 @@ export default function Login() {
               <label className="text-sm font-medium text-on-surface-variant block">Email Address</label>
               <div className="relative group">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-steel group-focus-within:text-primary transition-colors" />
-                <input 
-                  type="email" 
-                  placeholder="admin@velora.io" 
-                  required
+                  <input 
+                    type="email" 
+                    name="email"
+                    placeholder="admin@velora.io" 
+                    required
                   className="w-full h-11 pl-10 pr-4 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-50 placeholder:text-muted-steel/50 focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15 transition-all"
                 />
               </div>
@@ -81,10 +82,11 @@ export default function Login() {
               </div>
               <div className="relative group">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-steel group-focus-within:text-primary transition-colors" />
-                <input 
-                  type="password" 
-                  placeholder="••••••••" 
-                  required
+                  <input 
+                    type="password" 
+                    name="password"
+                    placeholder="••••••••" 
+                    required
                   className="w-full h-11 pl-10 pr-4 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-50 placeholder:text-muted-steel/50 focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15 transition-all"
                 />
               </div>
