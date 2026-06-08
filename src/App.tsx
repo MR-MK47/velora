@@ -5,6 +5,7 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
+import { requireAuthLoader } from './lib/authLoader';
 
 const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
@@ -22,7 +23,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="/app" element={<DashboardLayout />}>
+          <Route path="/app" element={<DashboardLayout />} loader={requireAuthLoader}>
             <Route index element={<CommandDashboard />} />
             <Route path="campaigns" element={<CampaignWorkspace />} />
             <Route path="settings" element={<Settings />} />

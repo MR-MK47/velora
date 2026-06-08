@@ -1,15 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, ShieldCheck, Zap, User } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function Signup() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setTimeout(() => navigate('/app'), 1500);
+    setError(null);
+
+    const form = e.currentTarget;
+    const email = (form.elements.namedItem('email') as HTMLInputElement).value;
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+
+    const { error: authError } = await supabase.auth.signUp({ email, password });
+
+    if (authError) {
+      setError(authError.message);
+      setIsSubmitting(false);
+      return;
+    }
+
+    navigate('/app');
   };
 
   return (
@@ -98,6 +114,9 @@ export default function Signup() {
               </div>
             </div>
 
+            {error && (
+              <p className="text-xs text-red-400/80 text-center">{error}</p>
+            )}
             <button 
               type="submit"
               disabled={isSubmitting}

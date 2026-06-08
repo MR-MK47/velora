@@ -1,13 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, Puzzle, Database, UploadCloud, ChevronRight, Eye, Key, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
+import { supabase } from '../lib/supabase';
+import { storeSecret, getDecryptedSecret } from '../lib/vault';
+import { useNavigate } from 'react-router-dom';
 
 export default function Settings() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('integrations');
   const [hasChanges, setHasChanges] = useState(false);
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
 
-  // Mocking change handler
+  useEffect(() => {
+    supabase.from('settings').select('key, value').then(({ data, error }) => {
+      if (error) { console.error('[Settings] Load error:', error); return; }
+      if (data) {
+        const map: Record<string, string> = {};
+        data.forEach(row => { map[row.key] = row.value; });
+        setSettings(map);
+      }
+    });
+  }, []);
+
   const triggerChange = () => setHasChanges(true);
 
   return (
@@ -19,17 +37,57 @@ export default function Settings() {
           <ChevronRight className="w-4 h-4 text-muted-steel/50" />
           <span className="text-zinc-50 font-bold">Settings</span>
         </div>
-        <button 
-          onClick={() => setHasChanges(false)}
-          className={cn(
-            "px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300",
-            hasChanges 
-              ? "bg-primary text-zinc-950 animate-[pulse-cobalt_3s_cubic-bezier(0.4,0,0.6,1)_infinite] hover:bg-white active:translate-y-[1px]" 
-              : "bg-transparent border border-[rgba(255,255,255,0.15)] text-muted-steel hover:text-zinc-50 hover:border-[rgba(255,255,255,0.3)]"
+        <div className="flex items-center gap-3">
+          {saveMessage && (
+            <span className={`text-xs font-medium ${saveMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`} data-save-message data-type={saveMessage.type}>
+              {saveMessage.text}
+            </span>
           )}
-        >
-          Save Changes
-        </button>
+          <button 
+            onClick={async () => {
+              setSaving(true);
+              setSaveMessage(null);
+
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error('Not authenticated');
+
+                const sensitivePattern = /_key$|_secret$|_password$|service_account/;
+
+                for (const el of document.querySelectorAll('input[data-key]')) {
+                  const input = el as HTMLInputElement;
+                  const key = input.dataset.key as string;
+                  const value = input.value;
+
+                  if (sensitivePattern.test(key)) {
+                    await storeSecret(key, value);
+                  } else {
+                    await supabase.from('settings').upsert({
+                      key,
+                      value,
+                      user_id: user.id,
+                    }).select();
+                  }
+                }
+                setHasChanges(false);
+                setSaveMessage({ type: 'success', text: 'Settings saved successfully.' });
+              } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : 'Failed to save settings';
+                setSaveMessage({ type: 'error', text: message });
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300",
+              hasChanges 
+                ? "bg-primary text-zinc-950 animate-[pulse-cobalt_3s_cubic-bezier(0.4,0,0.6,1)_infinite] hover:bg-white active:translate-y-[1px]" 
+                : "bg-transparent border border-[rgba(255,255,255,0.15)] text-muted-steel hover:text-zinc-50 hover:border-[rgba(255,255,255,0.3)]"
+            )}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 p-8 max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-[240px_1fr] gap-12">
@@ -129,6 +187,7 @@ export default function Settings() {
                     <input 
                       type="text" 
                       placeholder="https://your-project.supabase.co"
+                      data-key="supabase_url"
                       onChange={triggerChange}
                       className="w-full h-10 bg-zinc-950 border border-[rgba(255,255,255,0.1)] rounded-lg px-4 text-sm text-zinc-50 focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15 transition-all font-geist-mono"
                     />
@@ -137,12 +196,28 @@ export default function Settings() {
                     <label className="text-sm font-semibold text-muted-steel">Service Role API Key</label>
                     <div className="relative group">
                       <input 
-                        type="password" 
-                        defaultValue="sbp_57291a82f3c091d..."
+                        type={revealedKeys['service_role_key'] ? 'text' : 'password'}
+                        data-key="service_role_key"
+                        defaultValue={settings['service_role_key'] || ''}
                         onChange={triggerChange}
                         className="w-full h-10 bg-zinc-950 border border-[rgba(255,255,255,0.1)] rounded-lg pl-4 pr-10 text-sm text-zinc-50 focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15 transition-all font-geist-mono"
                       />
-                      <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-steel hover:text-zinc-50 transition-colors">
+                      <button 
+                        onClick={async () => {
+                          const secretId = settings['service_role_key'];
+                          if (secretId) {
+                            try {
+                              const plaintext = await getDecryptedSecret(secretId);
+                              if (plaintext) {
+                                setRevealedKeys(prev => ({ ...prev, service_role_key: plaintext }));
+                              }
+                            } catch (err) {
+                              console.error('Failed to reveal secret:', err);
+                            }
+                          }
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-steel hover:text-zinc-50 transition-colors"
+                      >
                         <Eye className="w-4 h-4" />
                       </button>
                     </div>
@@ -167,12 +242,28 @@ export default function Settings() {
                   <label className="text-sm font-semibold text-muted-steel">API Key</label>
                   <div className="relative group">
                     <input 
-                      type="password" 
+                      type={revealedKeys['gemini_key'] ? 'text' : 'password'}
+                      data-key="gemini_key"
                       placeholder="Enter Gemini API Key..."
                       onChange={triggerChange}
                       className="w-full h-10 bg-zinc-950 border border-[rgba(255,255,255,0.1)] rounded-lg pl-4 pr-10 text-sm text-zinc-50 focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-primary/15 transition-all font-geist-mono"
                     />
-                    <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-steel hover:text-zinc-50 transition-colors">
+                    <button 
+                      onClick={async () => {
+                        const secretId = settings['gemini_key'];
+                        if (secretId) {
+                          try {
+                            const plaintext = await getDecryptedSecret(secretId);
+                            if (plaintext) {
+                              setRevealedKeys(prev => ({ ...prev, gemini_key: plaintext }));
+                            }
+                          } catch (err) {
+                            console.error('Failed to reveal secret:', err);
+                          }
+                        }
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-steel hover:text-zinc-50 transition-colors"
+                    >
                       <Key className="w-4 h-4" />
                     </button>
                   </div>

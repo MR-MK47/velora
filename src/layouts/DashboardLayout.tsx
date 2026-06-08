@@ -3,6 +3,7 @@ import { LayoutDashboard, Megaphone, Settings, UserCircle, Menu, X } from 'lucid
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -24,6 +25,20 @@ export default function DashboardLayout() {
     
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('clip-queue')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'clips' }, (payload) => {
+        console.log('[Realtime] Clip queued:', payload.new.id);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clips' }, (payload) => {
+        console.log('[Realtime] Clip updated:', payload.new.id, payload.new.status);
+      })
+      .subscribe();
+
+    return () => { channel.unsubscribe(); };
   }, []);
 
   const navItems = [

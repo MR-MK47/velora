@@ -1,12 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const form = e.currentTarget;
+    const email = (form.elements.namedItem('email') as HTMLInputElement).value;
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
     navigate('/app');
   };
 
@@ -72,12 +90,16 @@ export default function Login() {
               </div>
             </div>
 
+            {error && (
+              <p className="text-xs text-red-400/80 text-center">{error}</p>
+            )}
             <button 
               type="submit"
-              className="w-full h-11 bg-primary text-zinc-950 text-sm font-semibold rounded-lg flex items-center justify-center gap-2 group hover:bg-white active:translate-y-[1px] transition-all animate-[pulse-cobalt_3s_cubic-bezier(0.4,0,0.6,1)_infinite]"
+              disabled={loading}
+              className="w-full h-11 bg-primary text-zinc-950 text-sm font-semibold rounded-lg flex items-center justify-center gap-2 group hover:bg-white active:translate-y-[1px] transition-all animate-[pulse-cobalt_3s_cubic-bezier(0.4,0,0.6,1)_infinite] disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              <span>Initialize Session</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              <span>{loading ? 'Authenticating...' : 'Initialize Session'}</span>
+              {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
             </button>
             <div className="pt-4 text-center border-t border-[rgba(255,255,255,0.08)]">
               <p className="text-sm text-muted-steel">
