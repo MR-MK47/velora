@@ -65,11 +65,6 @@ def load_colab_secrets():
     Supabase Vault is deprecated for worker secrets. All credentials are
     managed through Google Colab Secrets (google.colab.userdata).
 
-    Each required secret maps to an explicit userdata.get() call. If a
-    secret exists in the Colab UI but "Notebook access" is not toggled ON
-    for that row, userdata.get() raises SecretNotFoundError — even though
-    the value is stored. The error message below guides users to fix this.
-
     Returns:
         dict: Mapped secrets with lowercase keys matching internal usage.
 
@@ -78,7 +73,6 @@ def load_colab_secrets():
     """
     try:
         from google.colab import userdata
-        from google.colab.errors import SecretNotFoundError
     except ImportError:
         logging.fatal(
             "google.colab is not available. This worker runs exclusively in "
@@ -86,36 +80,36 @@ def load_colab_secrets():
         )
         sys.exit(1)
 
-    def _get(name):
+    required_keys = [
+        'SUPABASE_URL',
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'GEMINI_API_KEY',
+        'GROQ_API_KEY',
+        'FREESOUND_API_KEY',
+        'GCP_SERVICE_ACCOUNT',
+    ]
+
+    secrets = {}
+    for key in required_keys:
         try:
-            return userdata.get(name)
-        except SecretNotFoundError:
-            logging.fatal(
-                "Colab secret '%s' not found or Notebook access is OFF.\n"
-                "  1. Open the Colab Secrets panel (key icon in the left toolbar).\n"
-                "  2. Verify '%s' is listed and the toggle switch next to it is ON.\n"
-                "  3. If it is missing, add it via 'Add new secret'.\n"
-                "  4. Re-run this cell after toggling access ON.",
-                name, name
+            secrets[key.lower()] = userdata.get(key)
+        except Exception:
+            logging.error(
+                "Missing Google Colab Secret: '%s'. "
+                "Please click the 🔑 (Secrets) tab on the left sidebar in Colab, "
+                "add a secret named '%s', and toggle 'Notebook access' to ON.",
+                key, key
             )
             sys.exit(1)
 
-    secrets = {}
-
-    secrets['supabase_url'] = _get('SUPABASE_URL')
-    secrets['supabase_service_role_key'] = _get('SUPABASE_SERVICE_ROLE_KEY')
-    secrets['gemini_api_key'] = _get('GEMINI_API_KEY')
-    secrets['groq_api_key'] = _get('GROQ_API_KEY')
-    secrets['freesound_api_key'] = _get('FREESOUND_API_KEY')
-
-    raw_service_account = _get('GCP_SERVICE_ACCOUNT')
+    raw_service_account = secrets.pop('gcp_service_account')
     try:
         secrets['drive_service_account_json'] = json.loads(raw_service_account)
     except json.JSONDecodeError:
-        logging.fatal(
-            "Colab secret 'GCP_SERVICE_ACCOUNT' is not valid JSON.\n"
-            "  Copy the entire service account JSON object (including the outer braces)\n"
-            "  and paste it as the secret value. Verify there are no leading/trailing quotes."
+        logging.error(
+            "Colab secret 'GCP_SERVICE_ACCOUNT' is not valid JSON. "
+            "Copy the entire service account JSON object (including the outer braces) "
+            "and paste it as the secret value, then re-run this cell."
         )
         sys.exit(1)
 
