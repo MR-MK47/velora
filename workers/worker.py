@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Velora Media Processing Worker — Segment Download, Transcription, Silence Cut."""
 
-import os
-import sys
 import json
-import time
 import logging
-import subprocess
+import os
 import random
-from pathlib import Path
+import subprocess
+import sys
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from supabase import create_client
-import yt_dlp
 import groq
+import yt_dlp
+from supabase import create_client
 
 
 # ---------------------------------------------------------------------------
@@ -56,27 +56,77 @@ def setup_logging():
 
 
 # ---------------------------------------------------------------------------
-# Supabase bootstrap
+# Secret loading via Google Colab native Secrets manager
 # ---------------------------------------------------------------------------
 
-def bootstrap_supabase():
-    supabase_url = os.environ.get('SUPABASE_URL')
-    service_role = os.environ.get('SUPABASE_SERVICE_ROLE')
+def load_colab_secrets():
+    """Load all secrets from Google Colab's native Secrets manager.
+
+    Supabase Vault is deprecated for worker secrets. All credentials are
+    managed through Google Colab Secrets (google.colab.userdata).
+
+    Returns:
+        dict: Mapped secrets with lowercase keys matching internal usage.
+
+    Raises:
+        SystemExit: If any required secret is missing in the Colab environment.
+    """
+    try:
+        from google.colab import userdata
+        from google.colab.errors import SecretNotFoundError
+    except ImportError:
+        logging.fatal("google.colab not available — this worker runs exclusively in Google Colab")
+        sys.exit(1)
+
+    REQUIRED_SECRETS = [
+        'SUPABASE_URL',
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'GEMINI_API_KEY',
+        'GROQ_API_KEY',
+        'FREESOUND_API_KEY',
+        'GCP_SERVICE_ACCOUNT',
+    ]
+
+    secrets = {}
+    for name in REQUIRED_SECRETS:
+        try:
+            value = userdata.get(name)
+        except SecretNotFoundError:
+            logging.fatal(
+                "Missing required Colab secret: '%s'. "
+                "Add it via Runtime → Secrets in the Colab UI.", name
+            )
+            sys.exit(1)
+
+        # Map Colab secret names to internal dict keys
+        if name == 'GCP_SERVICE_ACCOUNT':
+            try:
+                secrets['drive_service_account_json'] = json.loads(value)
+            except json.JSONDecodeError as e:
+                logging.fatal(
+                    "Colab secret 'GCP_SERVICE_ACCOUNT' is not valid JSON: %s", e
+                )
+                sys.exit(1)
+        else:
+            secrets[name.lower()] = value
+
+    logging.info("Loaded %d secrets from Colab Secrets manager", len(secrets))
+    return secrets
+
+
+# ---------------------------------------------------------------------------
+# Supabase bootstrap (uses secrets dict instead of env vars)
+# ---------------------------------------------------------------------------
+
+def bootstrap_supabase(secrets):
+    supabase_url = secrets.get('supabase_url')
+    service_role = secrets.get('supabase_service_role_key')
     if not supabase_url or not service_role:
-        raise ValueError('SUPABASE_URL and SUPABASE_SERVICE_ROLE env vars required')
+        raise ValueError('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required in secrets dict')
     supabase = create_client(supabase_url, service_role)
     supabase.table('clips').select('id').limit(1).execute()
     logging.info('Supabase connection OK')
     return supabase
-
-
-def fetch_vault_secrets(supabase):
-    result = supabase.rpc('get_decrypted_secrets').execute()
-    secrets = {}
-    for row in result.data:
-        secrets[row['key_name']] = row['plaintext_value']
-    logging.info('Fetched %d secrets from Vault', len(secrets))
-    return secrets
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +424,7 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
         update_status(supabase, clip_id, 'uploading')
         drive_url = m['upload_to_drive'](
             render_path, clip,
-            json.loads(secrets.get('drive_service_account_json', '{}'))
+            secrets.get('drive_service_account_json', {})
         )
 
         # Mark as done
@@ -404,9 +454,8 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
 
 def process_all_clips(supabase, secrets):
     m = _import_pipeline()
-    drive_service = m['build_drive_service'](
-        json.loads(secrets.get('drive_service_account_json', '{}'))
-    )
+    drive_service_account = secrets.get('drive_service_account_json', {})
+    drive_service = m['build_drive_service'](drive_service_account)
     groq_client = groq.Client(api_key=secrets.get('groq_api_key', ''))
 
     clips = fetch_queued_clips(supabase)
@@ -439,8 +488,8 @@ def process_all_clips(supabase, secrets):
 def main():
     setup_logging()
     try:
-        supabase = bootstrap_supabase()
-        secrets = fetch_vault_secrets(supabase)
+        secrets = load_colab_secrets()
+        supabase = bootstrap_supabase(secrets)
         process_all_clips(supabase, secrets)
     except Exception as e:
         logging.fatal('Worker fatal error: %s', e)

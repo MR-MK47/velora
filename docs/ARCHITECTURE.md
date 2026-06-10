@@ -30,7 +30,7 @@
 │  SUPABASE  (Free tier)                                        │
 │  ├── PostgreSQL: all tables                                    │
 │  ├── Auth: email/password, session, RLS policies              │
-│  ├── Vault: encrypted API key storage (Groq, Gemini, etc.)    │
+│  ├── (worker secrets managed in Google Colab — not Vault)      │
 │  └── Realtime: broadcasts INSERT/UPDATE on clips table        │
 └──────────────────────┬────────────────────────────────────────┘
                        │ WebSocket (Colab connects OUT — no Ngrok)
@@ -153,6 +153,43 @@ Each function:
 ### D-ARCH-02: Symmetric Architecture
 
 The frontend and backend use the **same language (TypeScript)** and **same types** where possible. Shared validation schemas (Zod) live in `netlify/functions/_shared/` and are mirrored by TypeScript interfaces in `src/lib/types/`. This keeps the two layers in sync without a shared monorepo package.
+
+---
+
+### D-ARCH-03: Replace Supabase Vault with Google Colab Secrets for Worker Credentials
+
+**Context:** The Phase 2 worker pipeline originally used Supabase Vault (`supabase.rpc('get_decrypted_secrets')`) as the source of truth for API keys (Groq, Freesound, Gemini, Google Drive service account). This required workers to call a Supabase RPC on every startup, coupling secret management to database availability and adding an unnecessary network round-trip before processing could begin.
+
+**Decision:** Remove the `fetch_vault_secrets()` function and all Supabase Vault RPC calls from the worker codebase. Instead, load all secrets via `google.colab.userdata.get('SECRET_NAME')` at worker startup.
+
+**Rationale:**
+
+| Factor | Supabase Vault | Colab Secrets |
+|--------|---------------|---------------|
+| Latency | Network RPC on every startup | Local read, zero network |
+| Dependency | Requires Supabase to be up | Works even if Supabase is degraded |
+| UX | Admin must add keys via Supabase dashboard | Admin adds keys via Colab UI (Runtime → Secrets) |
+| Key naming | Arbitrary key names in `key_name` column | Standardized env-var-style names |
+| Secret rotation | Must update Vault row then restart worker | Update in Colab UI, re-run cell |
+| Service account JSON | Stored as string, parsed at runtime | Stored as JSON string, parsed at load time |
+
+**Trade-offs accepted:**
+- Colab secrets must be re-added if the runtime is recycled (Google resets Colab VM state periodically). This is acceptable because the `colab_setup.ipynb` notebook will include setup cells that guide the user through re-entering secrets.
+- No centralized secret audit trail. Acceptable for a single-user tool.
+- Secrets are scoped to a single Colab runtime. Acceptable because there is only one worker.
+
+**Mapped secrets:**
+
+| Colab Secret Name | Internal Dict Key | Used By |
+|-------------------|-------------------|---------|
+| `SUPABASE_URL` | `supabase_url` | `bootstrap_supabase()` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `supabase_service_role_key` | `bootstrap_supabase()` |
+| `GEMINI_API_KEY` | `gemini_api_key` | `evaluator.evaluate_clip()` |
+| `GROQ_API_KEY` | `groq_api_key` | `transcribe_audio()`, `groq.Client()` |
+| `FREESOUND_API_KEY` | `freesound_api_key` | `audio_agent.select_sfx()` |
+| `GCP_SERVICE_ACCOUNT` | `drive_service_account_json` (dict, parsed) | `drive_uploader.build_drive_service()` |
+
+**Status:** Declared 2026-06-10. Applied to all worker secrets loading.
 
 ---
 
