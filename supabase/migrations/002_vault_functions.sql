@@ -46,3 +46,19 @@ BEGIN
   RETURN v_plaintext;
 END;
 $$;
+
+-- get_decrypted_secrets: returns ALL decrypted secrets for the service worker
+-- (no arguments needed — used by worker.py with service_role)
+CREATE OR REPLACE FUNCTION public.get_decrypted_secrets()
+RETURNS TABLE(key_name TEXT, plaintext_value TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT s.key::TEXT, d.decrypted_secret::TEXT
+  FROM public.settings s
+  JOIN vault.decrypted_secrets d ON d.id = s.value::uuid;
+END;
+$$;

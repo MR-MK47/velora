@@ -13,6 +13,7 @@ const Signup = lazy(() => import('./pages/Signup'));
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'));
 const CommandDashboard = lazy(() => import('./pages/CommandDashboard'));
 const CampaignWorkspace = lazy(() => import('./pages/CampaignWorkspace'));
+const Schedule = lazy(() => import('./pages/Schedule'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/app" element={<DashboardLayout />} loader={requireAuthLoader}>
             <Route index element={<CommandDashboard />} />
             <Route path="campaigns" element={<CampaignWorkspace />} />
+            <Route path="schedule" element={<Schedule />} />
             <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

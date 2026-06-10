@@ -71,7 +71,7 @@ def bootstrap_supabase():
 
 
 def fetch_vault_secrets(supabase):
-    result = supabase.rpc('get_decrypted_secret', {}).execute()
+    result = supabase.rpc('get_decrypted_secrets').execute()
     secrets = {}
     for row in result.data:
         secrets[row['key_name']] = row['plaintext_value']

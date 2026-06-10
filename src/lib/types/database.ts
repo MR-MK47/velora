@@ -19,6 +19,7 @@ export interface Campaign {
   title: string;
   youtube_url: string | null;
   status: string;
+  campaign_brief?: string | null;
   created_at: string;
 }
 
@@ -30,7 +31,15 @@ export interface Clip {
   end_ts: number | null;
   status: 'queued' | 'processing' | 'done' | 'error';
   step: string | null;
+  current_step?: string | null;
+  mode: string;
+  clip_style?: string;
+  target_duration?: string;
+  user_prompt?: string | null;
+  virality_score?: number | null;
+  edit_state?: unknown;
   drive_url: string | null;
+  drive_folder_url?: string | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;

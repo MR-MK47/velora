@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Megaphone, Settings, UserCircle, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Megaphone, Settings, UserCircle, Menu, X, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 export default function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [queueCount, setQueueCount] = useState(0);
 
   useEffect(() => {
     const handleResize = () => {
@@ -19,22 +20,36 @@ export default function DashboardLayout() {
         setIsSidebarOpen(true);
       }
     };
-    
-    // Initial check
+
     handleResize();
-    
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
+    supabase
+      .from('clips')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['queued', 'processing'])
+      .then(({ count }) => {
+        if (count != null) setQueueCount(count);
+      });
+
     const channel = supabase
       .channel('clip-queue')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'clips' }, (payload) => {
-        console.log('[Realtime] Clip queued:', payload.new.id);
+        const status = payload.new?.status as string;
+        if (status === 'queued' || status === 'processing') {
+          setQueueCount((c) => c + 1);
+        }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clips' }, (payload) => {
-        console.log('[Realtime] Clip updated:', payload.new.id, payload.new.status);
+        const oldStatus = payload.old?.status as string;
+        const newStatus = payload.new?.status as string;
+        const wasActive = oldStatus === 'queued' || oldStatus === 'processing';
+        const isActive = newStatus === 'queued' || newStatus === 'processing';
+        if (wasActive && !isActive) setQueueCount((c) => Math.max(0, c - 1));
+        if (!wasActive && isActive) setQueueCount((c) => c + 1);
       })
       .subscribe();
 
@@ -43,7 +58,8 @@ export default function DashboardLayout() {
 
   const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/app', end: true },
-    { label: 'Campaigns', icon: Megaphone, path: '/app/campaigns' },
+    { label: 'Campaigns', icon: Megaphone, path: '/app/campaigns', badge: queueCount > 0 ? queueCount : undefined },
+    { label: 'Schedule', icon: Calendar, path: '/app/schedule' },
     { label: 'Settings', icon: Settings, path: '/app/settings' },
   ];
 
@@ -51,18 +67,16 @@ export default function DashboardLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-deep-void">
-      {/* Mobile Sidebar Overlay */}
       {isMobile && isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* Persistent SideNavBar */}
-      <motion.aside 
+      <motion.aside
         initial={false}
-        animate={{ 
+        animate={{
           width: isSidebarOpen ? 256 : isMobile ? 0 : 80,
           x: isMobile && !isSidebarOpen ? -256 : 0
         }}
@@ -75,7 +89,7 @@ export default function DashboardLayout() {
         <div className="flex items-center justify-between mb-8">
           <AnimatePresence mode="popLayout">
             {isSidebarOpen && (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -87,7 +101,7 @@ export default function DashboardLayout() {
             )}
           </AnimatePresence>
           {!isMobile && (
-            <button 
+            <button
               onClick={toggleSidebar}
               className={cn(
                 "p-2 rounded-lg text-muted-steel hover:bg-[rgba(255,255,255,0.05)] hover:text-white transition-colors",
@@ -98,7 +112,7 @@ export default function DashboardLayout() {
             </button>
           )}
           {isMobile && isSidebarOpen && (
-            <button 
+            <button
               onClick={toggleSidebar}
               className="p-2 rounded-lg text-muted-steel hover:bg-[rgba(255,255,255,0.05)] hover:text-white transition-colors"
             >
@@ -130,16 +144,24 @@ export default function DashboardLayout() {
                   <item.icon className="w-5 h-5 shrink-0" strokeWidth={isActive ? 2.5 : 2} />
                   <AnimatePresence>
                     {isSidebarOpen && (
-                      <motion.span 
+                      <motion.span
                         initial={{ opacity: 0, width: 0 }}
                         animate={{ opacity: 1, width: 'auto' }}
                         exit={{ opacity: 0, width: 0 }}
-                        className="text-sm font-medium overflow-hidden"
+                        className="text-sm font-medium overflow-hidden flex items-center gap-2"
                       >
                         {item.label}
+                        {item.badge != null && (
+                          <span className="px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] font-bold rounded-full min-w-[18px] text-center leading-none">
+                            {item.badge > 99 ? '99+' : item.badge}
+                          </span>
+                        )}
                       </motion.span>
                     )}
                   </AnimatePresence>
+                  {!isSidebarOpen && !isMobile && item.badge != null && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
+                  )}
                 </>
               )}
             </NavLink>
@@ -148,7 +170,7 @@ export default function DashboardLayout() {
 
         <div className="mt-auto pt-4 border-t border-[rgba(255,255,255,0.08)]">
           <div className={cn(
-            "flex items-center px-2", 
+            "flex items-center px-2",
             isSidebarOpen ? "space-x-3" : "justify-center px-0"
           )}>
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-sm">
@@ -156,7 +178,7 @@ export default function DashboardLayout() {
             </div>
             <AnimatePresence>
               {isSidebarOpen && (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: 'auto' }}
                   exit={{ opacity: 0, width: 0 }}
@@ -171,12 +193,10 @@ export default function DashboardLayout() {
         </div>
       </motion.aside>
 
-      {/* Main Content Canvas */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-deep-void relative min-w-0">
-        {/* Mobile Header Toolbar */}
         {isMobile && (
           <div className="h-16 flex items-center px-4 bg-charcoal-ink border-b border-[rgba(255,255,255,0.08)] shrink-0 absolute top-0 left-0 right-0 z-10 lg:hidden">
-            <button 
+            <button
               onClick={toggleSidebar}
               className="p-2 rounded-lg text-muted-steel hover:bg-[rgba(255,255,255,0.05)] hover:text-white transition-colors"
             >
