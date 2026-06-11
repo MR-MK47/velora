@@ -353,10 +353,16 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
     step_log = {}
 
     try:
-        youtube_url = clip.get('campaigns', {}).get('youtube_url')
+        edit_state = clip.get('edit_state') or {}
+        youtube_url = (
+            clip.get('youtube_url') or
+            edit_state.get('youtube_url') or
+            edit_state.get('source', {}).get('youtube_url') or
+            (clip.get('campaigns') or {}).get('youtube_url')
+        )
+
         if not youtube_url:
-            logging.error("Missing youtube_url in joined campaign data for clip %s", clip_id)
-            update_status(supabase, clip_id, 'error', error='Missing youtube_url in joined campaign data')
+            logging.error('Missing youtube_url for clip %s. Clip data dumped: %s', clip.get('id'), clip)
             return False
 
         update_status(supabase, clip_id, 'downloading')
