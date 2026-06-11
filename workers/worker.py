@@ -221,7 +221,7 @@ def download_segment(clip, working_dir, youtube_url):
         ydl_opts = {
             'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
             'outtmpl': str(segment_path),
-            'download_ranges': [{'start_time': start_ts, 'end_time': end_ts}],
+            'download_ranges': lambda info, ydl: [{'start_time': start_ts, 'end_time': end_ts}],
             'force_keyframes_at_cuts': True,
             'quiet': True,
             'no_warnings': True,
