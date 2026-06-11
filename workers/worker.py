@@ -137,10 +137,10 @@ def bootstrap_supabase(secrets):
 # ---------------------------------------------------------------------------
 
 def fetch_queued_clips(supabase):
-    queued = supabase.table('clips').select('*').eq('status', 'queued').execute()
+    queued = supabase.table('clips').select('*, campaigns(*)').eq('status', 'queued').execute()
     clips = list(queued.data)
 
-    stale = supabase.table('clips').select('*').eq('status', 'processing').execute()
+    stale = supabase.table('clips').select('*, campaigns(*)').eq('status', 'processing').execute()
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
     for clip in stale.data:
         updated = clip.get('updated_at')
@@ -209,7 +209,7 @@ def with_retry_and_fallback(stage_fn, fallback_fn, *args, max_retries=3):
 # ---------------------------------------------------------------------------
 
 def download_segment(clip, working_dir, secrets):
-    youtube_url = (clip.get('campaigns') or {}).get('youtube_url') or clip.get('youtube_url')
+    youtube_url = clip.get('campaigns', {}).get('youtube_url')
     if not youtube_url:
         raise ValueError('No youtube_url found for clip')
 
@@ -352,6 +352,12 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
     step_log = {}
 
     try:
+        youtube_url = clip.get('campaigns', {}).get('youtube_url')
+        if not youtube_url:
+            logging.error("Missing youtube_url in joined campaign data for clip %s", clip_id)
+            update_status(supabase, clip_id, 'error', error='Missing youtube_url in joined campaign data')
+            return False
+
         update_status(supabase, clip_id, 'downloading')
         segment_path = download_segment(clip, working_dir, secrets)
         step_log['last_stage'] = 'downloaded'
