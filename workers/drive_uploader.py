@@ -18,8 +18,8 @@ def build_drive_service(service_account_json):
     return service
 
 
-def ensure_folder_path(service, folder_parts):
-    parent_id = 'root'
+def ensure_folder_path(service, folder_parts, start_parent='root'):
+    parent_id = start_parent
     for part in folder_parts:
         query = (
             f"name='{part}' and '{parent_id}' in parents "
@@ -61,14 +61,14 @@ def set_public_sharing(service, file_id):
     logging.info('Set public sharing on file: %s', file_id)
 
 
-def upload_to_drive(local_path, clip, service_account_json):
+def upload_to_drive(local_path, clip, service_account_json, root_folder_id=None):
     service = build_drive_service(service_account_json)
 
     campaign_title = (clip.get('campaigns') or {}).get('title', 'Unknown Campaign')
     clip_id = clip['id']
 
     folder_parts = ['Velora', campaign_title, clip_id, 'v1']
-    folder_id = ensure_folder_path(service, folder_parts)
+    folder_id = ensure_folder_path(service, folder_parts, start_parent=root_folder_id)
 
     file = upload_file(service, local_path, folder_id, 'final.mp4')
     set_public_sharing(service, file['id'])

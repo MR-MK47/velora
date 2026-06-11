@@ -87,6 +87,7 @@ def load_colab_secrets():
         'GROQ_API_KEY',
         'FREESOUND_API_KEY',
         'GCP_SERVICE_ACCOUNT',
+        'DRIVE_ROOT_FOLDER_ID',
     ]
 
     secrets = {}
@@ -433,7 +434,8 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
         update_status(supabase, clip_id, 'uploading')
         drive_url = m['upload_to_drive'](
             render_path, clip,
-            secrets.get('drive_service_account_json', {})
+            secrets.get('drive_service_account_json', {}),
+            secrets.get('drive_root_folder_id')
         )
 
         # Mark as done
