@@ -6,7 +6,7 @@ import re
 import subprocess
 from pathlib import Path
 
-import google.generativeai as genai
+from google import genai
 import PIL.Image
 
 
@@ -33,8 +33,8 @@ def extract_filmstrip(video_path, output_dir):
 
 
 def evaluate_clip(video_path, filmstrip_path, gemini_model_name='gemini-2.0-flash-lite', secrets=None):
-    genai.configure(api_key=secrets.get('gemini_api_key', ''))
-    model = genai.GenerativeModel(gemini_model_name)
+    api_key = secrets.get('gemini_api_key', '')
+    client = genai.Client(api_key=api_key)
 
     img = PIL.Image.open(str(filmstrip_path))
 
@@ -55,7 +55,10 @@ Score content quality (hook presence, facial framing, engagement potential, paci
 Set passed=true only if BOTH scores >= 0.6. Issues should list specific problems.
 Recommendation: "pass" if passed, "retry" if minor issues, "fail" if unfixable."""
 
-    response = model.generate_content([img, prompt])
+    response = client.models.generate_content(
+        model=gemini_model_name,
+        contents=[img, prompt]
+    )
 
     text = response.text.strip()
     text = re.sub(r'^```(?:json)?\s*', '', text)
