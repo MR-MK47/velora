@@ -213,6 +213,9 @@ def download_segment(clip, working_dir, youtube_url):
     if not youtube_url:
         raise ValueError('No youtube_url found for clip')
 
+    if not os.path.exists('/content/drive/cookies.txt'):
+        logging.warning("cookies.txt not found! YouTube will likely block this download. Please upload cookies.txt to the Colab /content folder.")
+
     start_ts = float(clip['start_ts'])
     end_ts = float(clip['end_ts'])
     segment_path = working_dir / 'segment.mp4'
@@ -221,6 +224,7 @@ def download_segment(clip, working_dir, youtube_url):
         ydl_opts = {
             'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
             'outtmpl': str(segment_path),
+            'cookiefile': '/content/drive/cookies.txt',
             'download_ranges': lambda info, ydl: [{'start_time': start_ts, 'end_time': end_ts}],
             'force_keyframes_at_cuts': True,
             'quiet': True,
@@ -237,6 +241,7 @@ def download_segment(clip, working_dir, youtube_url):
         ydl_opts = {
             'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
             'outtmpl': str(full_path),
+            'cookiefile': '/content/drive/cookies.txt',
             'quiet': True,
             'no_warnings': True,
         }
