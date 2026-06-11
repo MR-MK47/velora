@@ -209,8 +209,7 @@ def with_retry_and_fallback(stage_fn, fallback_fn, *args, max_retries=3):
 # Pipeline stage: Download Segment (PIPE-02)
 # ---------------------------------------------------------------------------
 
-def download_segment(clip, working_dir, secrets):
-    youtube_url = clip.get('campaigns', {}).get('youtube_url')
+def download_segment(clip, working_dir, youtube_url):
     if not youtube_url:
         raise ValueError('No youtube_url found for clip')
 
@@ -369,7 +368,7 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
             return False
 
         update_status(supabase, clip_id, 'downloading')
-        segment_path = download_segment(clip, working_dir, secrets)
+        segment_path = download_segment(clip, working_dir, youtube_url)
         step_log['last_stage'] = 'downloaded'
         supabase.table('clips').update({
             'step': json.dumps(step_log)
