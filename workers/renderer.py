@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from moviepy import VideoFileClip, AudioFileClip, CompositeAudioClip, afx
+from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
 
 
 def render_vertical(segment_path, output_path, audio_layers, volumes, clip_info=None):
@@ -13,32 +13,32 @@ def render_vertical(segment_path, output_path, audio_layers, volumes, clip_info=
 
     original_audio = video.audio
     if original_audio:
-        original_audio = original_audio.with_effects([afx.MultiplyVolume(volumes.get('dialogue', 0.8))])
+        original_audio = original_audio.volx(volumes.get('dialogue', 0.8))
         audio_clips.append(original_audio)
 
     for sfx in audio_layers.get('sfx', []):
         sfx_clip = AudioFileClip(sfx['path'])
-        sfx_clip = sfx_clip.with_effects([afx.MultiplyVolume(volumes.get('sfx', 0.5))])
-        sfx_clip = sfx_clip.with_start(sfx.get('timing', 0))
+        sfx_clip = sfx_clip.volx(volumes.get('sfx', 0.5))
+        sfx_clip = sfx_clip.set_start(sfx.get('timing', 0))
         audio_clips.append(sfx_clip)
 
     hook_path = audio_layers.get('hook', {}).get('path')
     if hook_path:
         hook_clip = AudioFileClip(hook_path)
-        hook_clip = hook_clip.with_duration(video.duration)
-        hook_clip = hook_clip.with_effects([afx.MultiplyVolume(volumes.get('hook', 0.3))])
+        hook_clip = hook_clip.set_duration(video.duration)
+        hook_clip = hook_clip.volx(volumes.get('hook', 0.3))
         audio_clips.append(hook_clip)
 
     bg_path = audio_layers.get('background', {}).get('path')
     if bg_path:
         bg_clip = AudioFileClip(bg_path)
-        bg_clip = bg_clip.with_duration(video.duration)
-        bg_clip = bg_clip.with_effects([afx.MultiplyVolume(volumes.get('background', 0.1))])
+        bg_clip = bg_clip.set_duration(video.duration)
+        bg_clip = bg_clip.volx(volumes.get('background', 0.1))
         audio_clips.append(bg_clip)
 
     if audio_clips:
         final_audio = CompositeAudioClip(audio_clips)
-        video = video.with_audio(final_audio)
+        video = video.set_audio(final_audio)
 
     target_w, target_h = 1080, 1920
     video_w, video_h = video.size
@@ -48,12 +48,12 @@ def render_vertical(segment_path, output_path, audio_layers, volumes, clip_info=
     if new_w < target_w:
         scale_factor = target_w / video_w
         new_h = int(video_h * scale_factor)
-        video = video.resized(height=new_h)
-        video = video.cropped(x_center=video.w / 2, width=target_w,
-                              y_center=video.h / 2, height=target_h)
+        video = video.resize(height=new_h)
+        video = video.crop(x_center=video.w / 2, width=target_w,
+                           y_center=video.h / 2, height=target_h)
     else:
-        video = video.resized(height=target_h)
-        video = video.cropped(x_center=video.w / 2, width=target_w)
+        video = video.resize(height=target_h)
+        video = video.crop(x_center=video.w / 2, width=target_w)
 
     video.write_videofile(
         str(output_path),
