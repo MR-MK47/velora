@@ -356,10 +356,13 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
         edit_state = clip.get('edit_state') or {}
         youtube_url = (
             clip.get('youtube_url') or
+            edit_state.get('source_url') or
             edit_state.get('youtube_url') or
-            edit_state.get('source', {}).get('youtube_url') or
             (clip.get('campaigns') or {}).get('youtube_url')
         )
+
+        if not youtube_url and edit_state.get('video_id'):
+            youtube_url = f"https://www.youtube.com/watch?v={edit_state.get('video_id')}"
 
         if not youtube_url:
             logging.error('Missing youtube_url for clip %s. Clip data dumped: %s', clip.get('id'), clip)

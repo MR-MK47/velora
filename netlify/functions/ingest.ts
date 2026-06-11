@@ -286,10 +286,7 @@ For segments, return: {"segments":[{"start_ts":0,"end_ts":0,"hook_title":"...","
         edit_state: {
           source_url: youtube_url,
           video_id: videoId,
-          transcript,
-          campaign_brief: campaignBrief || '',
           hook_title: segment.hook_title,
-          virality_score: segment.virality_score,
         },
       })
       .select('id')
