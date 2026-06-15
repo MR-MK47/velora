@@ -225,7 +225,7 @@ def download_segment(clip, working_dir, youtube_url):
 
     def try_ytdlp_sections():
         ydl_opts = {
-            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': str(segment_path),
             'cookiefile': cookie_path,
             'download_ranges': lambda info, ydl: [{'start_time': start_ts, 'end_time': end_ts}],
@@ -242,7 +242,7 @@ def download_segment(clip, working_dir, youtube_url):
     def try_full_download_and_cut():
         full_path = working_dir / 'full.mp4'
         ydl_opts = {
-            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': str(full_path),
             'cookiefile': cookie_path,
             'quiet': True,
