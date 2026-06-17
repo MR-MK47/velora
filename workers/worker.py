@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import time
+import warnings
+warnings.filterwarnings('ignore', category=SyntaxWarning)
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -506,7 +508,7 @@ def process_all_clips(supabase, secrets):
         from google.colab import auth
         from googleapiclient.discovery import build
         from google.auth import default
-        auth.authenticate_user(scopes=['https://www.googleapis.com/auth/drive.file'])
+        auth.authenticate_user()
         credentials, _ = default()
         drive_service = build('drive', 'v3', credentials=credentials)
         logging.info('Drive API service built from Colab auth')
