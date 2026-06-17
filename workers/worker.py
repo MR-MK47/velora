@@ -329,15 +329,19 @@ def cut_silence(segment_path, working_dir):
         '-i', str(segment_path),
         '-af',
         'silenceremove=start_periods=1:start_duration=1:start_threshold=-30dB:'
-        'stop_periods=1:stop_duration=1:stop_threshold=-30dB:'
-        'stop_silence_operation=trim+delete,'
+        'stop_periods=1:stop_duration=1:stop_threshold=-30dB,'
         'afade=t=in:ss=0:d=0.03,'
-        'afade=t=out:st=duration-0.03:d=0.03',
+        'afade=t=out:st=0:d=0.03',
         '-c:v', 'copy',
         '-c:a', 'aac',
+        '-shortest',
         str(cut_path)
     ]
-    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logging.error('ffmpeg silenceremove failed (exit %d). stderr:\n%s',
+                      result.returncode, result.stderr.strip())
+        result.check_returncode()
 
     if not cut_path.exists():
         raise FileNotFoundError(f'Silence-cut segment not created at {cut_path}')
@@ -463,7 +467,10 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
         }).eq('id', clip_id).execute()
 
     except Exception as e:
-        logging.error('Clip %s failed: %s', clip_id, e)
+        detail = str(e)
+        if isinstance(e, subprocess.CalledProcessError) and e.stderr:
+            detail = e.stderr.strip()
+        logging.error('Clip %s failed: %s', clip_id, detail)
         update_status(supabase, clip_id, 'error', error=str(e))
         return False
 
