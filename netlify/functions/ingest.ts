@@ -189,19 +189,9 @@ async function handlerInner(event: any): Promise<{ statusCode: number; headers: 
   }).filter((h: string | undefined): h is string => !!h) || [];
 
   const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!geminiApiKey) {
-    return errorResponse('AI processing not configured', 502);
-  }
+  const groqApiKey = process.env.GROQ_API_KEY;
 
-  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-
-  let segments: GeminiSegment[] = [];
-  let noSegments = false;
-  let noSegmentsReason = '';
-
-  console.log('[ingest] Step: calling Gemini API');
-  try {
-    const systemPrompt = `You are a viral clip extraction AI. Extract up to 8 of the most engaging segments from the transcript.
+  const systemPrompt = `You are a viral clip extraction AI. Extract up to 8 of the most engaging segments from the transcript.
 
 Rules:
 - Segments must be 15-60 seconds long
@@ -221,41 +211,138 @@ If no good segments exist, return: {"no_segments":true,"reason":"explanation"}
 
 For segments, return: {"segments":[{"start_ts":0,"end_ts":0,"hook_title":"...","virality_score":0}]}`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: transcript,
-      config: {
-        systemInstruction: systemPrompt,
-        temperature: 0.3,
-        maxOutputTokens: 8192,
-      },
-    });
+  let segments: GeminiSegment[] = [];
+  let noSegments = false;
+  let noSegmentsReason = '';
+  let lastError: unknown;
 
-    const text = response.text;
-    if (!text) {
-      return errorResponse('AI processing failed: empty response', 502);
+  const geminiModels = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+
+  if (geminiApiKey) {
+    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+
+    for (const model of geminiModels) {
+      let attempt = 0;
+      const maxAttempts = 2;
+      while (attempt < maxAttempts) {
+        attempt++;
+        console.log('[ingest] Gemini attempt', attempt, 'model:', model);
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: transcript,
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: 0.3,
+              maxOutputTokens: 8192,
+            },
+          });
+
+          const text = response.text;
+          if (!text) {
+            console.warn('[ingest] Empty response from model:', model);
+            break;
+          }
+
+          let parsedResponse: GeminiResponse;
+          try {
+            parsedResponse = parseGeminiJson(text);
+          } catch (parseErr) {
+            console.warn('[ingest] Invalid JSON from model:', model, parseErr);
+            break;
+          }
+
+          if (parsedResponse.no_segments) {
+            noSegments = true;
+            noSegmentsReason = parsedResponse.reason || 'No suitable segments found';
+          } else if (parsedResponse.segments) {
+            segments = parsedResponse.segments;
+          } else {
+            console.warn('[ingest] Unexpected format from model:', model);
+            break;
+          }
+          console.log('[ingest] Gemini returned, segments:', segments.length, 'noSegments:', noSegments, 'model:', model);
+          break;
+        } catch (e) {
+          lastError = e;
+          const errMsg = e instanceof Error ? e.message : String(e);
+          const isOverload = errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand');
+          console.warn('[ingest] Gemini model', model, 'attempt', attempt, 'failed:', errMsg);
+          if (isOverload && attempt < maxAttempts) {
+            const delay = attempt * 1000;
+            console.log('[ingest] Retrying in', delay, 'ms');
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+          break;
+        }
+      }
+      if (segments.length > 0 || noSegments) break;
     }
+  }
 
-    let parsedResponse: GeminiResponse;
+  if (segments.length === 0 && !noSegments && groqApiKey) {
+    console.log('[ingest] Falling back to Groq');
     try {
-      parsedResponse = parseGeminiJson(text);
-    } catch (parseErr) {
-      console.error('[ingest] Raw Gemini response text:', text);
-      return errorResponse('AI generated invalid JSON. Please try again.', 422);
-    }
+      const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: transcript },
+          ],
+          temperature: 0.3,
+          max_tokens: 8192,
+        }),
+      });
 
-    if (parsedResponse.no_segments) {
-      noSegments = true;
-      noSegmentsReason = parsedResponse.reason || 'No suitable segments found';
-    } else if (parsedResponse.segments) {
-      segments = parsedResponse.segments;
-    } else {
-      return errorResponse('AI processing failed: unexpected response format', 502);
+      if (!groqResponse.ok) {
+        const errBody = await groqResponse.text();
+        throw new Error(`Groq error ${groqResponse.status}: ${errBody}`);
+      }
+
+      const groqData = await groqResponse.json();
+      const groqText = groqData?.choices?.[0]?.message?.content;
+      if (!groqText) {
+        throw new Error('Groq returned empty response');
+      }
+
+      let parsedResponse: GeminiResponse;
+      try {
+        parsedResponse = parseGeminiJson(groqText);
+      } catch (parseErr) {
+        console.error('[ingest] Groq invalid JSON:', groqText);
+        throw new Error('Groq returned invalid JSON');
+      }
+
+      if (parsedResponse.no_segments) {
+        noSegments = true;
+        noSegmentsReason = parsedResponse.reason || 'No suitable segments found';
+      } else if (parsedResponse.segments) {
+        segments = parsedResponse.segments;
+      } else {
+        throw new Error('Groq returned unexpected format');
+      }
+      console.log('[ingest] Groq returned, segments:', segments.length, 'noSegments:', noSegments);
+    } catch (e) {
+      lastError = e;
+      console.error('[ingest] Groq fallback error:', e);
     }
-    console.log('[ingest] Step: Gemini API returned, segments:', segments.length, 'noSegments:', noSegments);
-  } catch (e) {
-    console.error('[ingest] Gemini processing error:', e);
-    return errorResponse('AI processing failed', 502);
+  }
+
+  if (segments.length === 0 && !noSegments) {
+    console.error('[ingest] All AI providers failed, last error:', lastError);
+    const errMsg = lastError instanceof Error ? lastError.message : 'AI processing failed';
+    const isOverload = errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand');
+    if (isOverload) {
+      return errorResponse('AI service is temporarily overloaded. Please try again in a few minutes.', 503);
+    }
+    return errorResponse(errMsg, 502);
   }
 
   if (noSegments) {
@@ -270,7 +357,7 @@ For segments, return: {"segments":[{"start_ts":0,"end_ts":0,"hook_title":"...","
 
   console.log('[ingest] Step: inserting', segments.length, 'clips into Supabase');
   for (const segment of segments) {
-    const { data: clip, error: insertError } = await supabaseAdmin
+    const { data: inserted, error: insertError } = await supabaseAdmin
       .from('clips')
       .insert({
         campaign_id,
@@ -289,24 +376,24 @@ For segments, return: {"segments":[{"start_ts":0,"end_ts":0,"hook_title":"...","
           hook_title: segment.hook_title,
         },
       })
-      .select('id')
-      .single();
+      .select('id');
 
     if (insertError) {
-      console.error('[ingest] Clip insert failed:', insertError);
+      console.error('[ingest] Clip insert failed:', insertError.message);
       continue;
     }
 
-    if (!clip?.id) {
-      console.error('[ingest] Clip insert returned no id — .select() may have failed silently');
+    if (!inserted || inserted.length === 0) {
+      console.error('[ingest] Clip insert returned no rows');
       continue;
     }
 
-    clipIds.push(clip.id);
+    const clipId = inserted[0].id;
+    clipIds.push(clipId);
 
     await supabaseAdmin.from('analytics_events').insert({
       user_id: userId,
-      clip_id: clip.id,
+      clip_id: clipId,
       event_type: 'clip_generated',
       platform: null,
       value: segment.virality_score,
