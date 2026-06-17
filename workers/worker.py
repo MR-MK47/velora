@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import random
+import shutil
 import subprocess
 import sys
 import time
@@ -27,7 +28,7 @@ def _import_pipeline():
     global _pipeline_modules
     if _pipeline_modules is not None:
         return _pipeline_modules
-    from workers import audio_agent, renderer, evaluator, drive_uploader
+    from workers import audio_agent, renderer, evaluator
     _pipeline_modules = {
         'select_sfx': audio_agent.select_sfx,
         'select_hook': audio_agent.select_hook,
@@ -38,8 +39,6 @@ def _import_pipeline():
         'evaluate_clip': evaluator.evaluate_clip,
         'extract_filmstrip': evaluator.extract_filmstrip,
         'should_retry': evaluator.should_retry,
-        'upload_to_drive': drive_uploader.upload_to_drive,
-        'build_drive_service': drive_uploader.build_drive_service,
     }
     return _pipeline_modules
 
@@ -86,8 +85,6 @@ def load_colab_secrets():
         'GEMINI_API_KEY',
         'GROQ_API_KEY',
         'FREESOUND_API_KEY',
-        'GCP_SERVICE_ACCOUNT',
-        'DRIVE_ROOT_FOLDER_ID',
     ]
 
     secrets = {}
@@ -102,17 +99,6 @@ def load_colab_secrets():
                 key, key
             )
             sys.exit(1)
-
-    raw_service_account = secrets.pop('gcp_service_account')
-    try:
-        secrets['drive_service_account_json'] = json.loads(raw_service_account)
-    except json.JSONDecodeError:
-        logging.error(
-            "Colab secret 'GCP_SERVICE_ACCOUNT' is not valid JSON. "
-            "Copy the entire service account JSON object (including the outer braces) "
-            "and paste it as the secret value, then re-run this cell."
-        )
-        sys.exit(1)
 
     logging.info("Loaded %d secrets from Colab Secrets manager", len(secrets))
     return secrets
@@ -404,9 +390,9 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
         # Stage 4: Audio selection (AUDIO-01, AUDIO-02, AUDIO-03)
         update_status(supabase, clip_id, 'mixing', step='selecting audio')
         audio_layers = {
-            'sfx': m['select_sfx'](transcript, drive_service, groq_client, secrets),
-            'hook': m['select_hook'](transcript, drive_service, groq_client),
-            'background': m['select_background'](transcript, drive_service, groq_client),
+            'sfx': m['select_sfx'](transcript, groq_client, secrets),
+            'hook': m['select_hook'](transcript, groq_client),
+            'background': m['select_background'](transcript, groq_client),
         }
         volumes = m['determine_volumes'](transcript, len(audio_layers['sfx']), groq_client)
         step_log['last_stage'] = 'audio_selected'
@@ -450,18 +436,45 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
             'step': json.dumps(step_log)
         }).eq('id', clip_id).execute()
 
-        # Stage 7: Upload to Drive (EVAL-02)
+        # Stage 7: Save to mounted Drive + get shareable link
         update_status(supabase, clip_id, 'uploading')
-        drive_url = m['upload_to_drive'](
-            render_path, clip,
-            secrets.get('drive_service_account_json', {}),
-            secrets.get('drive_root_folder_id')
-        )
+
+        campaign_title = (clip.get('campaigns') or {}).get('title', 'Unknown Campaign')
+        mounted_dir = Path(f'/content/drive/MyDrive/Velora/{campaign_title}/{clip_id}/v1')
+        mounted_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(render_path), str(mounted_dir / 'final.mp4'))
+
+        drive_url = None
+        if drive_service:
+            try:
+                FOLDER_MIME = 'application/vnd.google-apps.folder'
+                parent_id = 'root'
+                for part in ['Velora', campaign_title, clip_id, 'v1']:
+                    q = f"name='{part}' and '{parent_id}' in parents and trashed=false and mimeType='{FOLDER_MIME}'"
+                    folders = drive_service.files().list(q=q, fields='files(id)').execute().get('files', [])
+                    parent_id = folders[0]['id'] if folders else parent_id
+
+                results = drive_service.files().list(
+                    q=f"name='final.mp4' and '{parent_id}' in parents and trashed=false",
+                    fields='files(id, webViewLink)'
+                ).execute()
+                file_info = results.get('files', [None])[0]
+                if file_info:
+                    drive_service.permissions().create(
+                        fileId=file_info['id'],
+                        body={'type': 'anyone', 'role': 'reader'}
+                    ).execute()
+                    file_info = drive_service.files().get(
+                        fileId=file_info['id'], fields='id, webViewLink'
+                    ).execute()
+                    drive_url = file_info['webViewLink']
+            except Exception as link_e:
+                logging.warning('Failed to get Drive shareable link: %s', link_e)
 
         # Mark as done
         update_status(supabase, clip_id, 'done')
         supabase.table('clips').update({
-            'drive_url': drive_url,
+            'drive_url': drive_url or '',
             'step': json.dumps({**step_log, 'last_stage': 'done',
                                 'eval_score': eval_result.get('scores', {})})
         }).eq('id', clip_id).execute()
@@ -476,7 +489,6 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
 
     finally:
         if working_dir.exists():
-            import shutil
             shutil.rmtree(working_dir, ignore_errors=True)
 
     return True
@@ -488,8 +500,19 @@ def process_clip(clip, supabase, secrets, drive_service, groq_client):
 
 def process_all_clips(supabase, secrets):
     m = _import_pipeline()
-    drive_service_account = secrets.get('drive_service_account_json', {})
-    drive_service = m['build_drive_service'](drive_service_account)
+
+    drive_service = None
+    try:
+        from google.colab import auth
+        from googleapiclient.discovery import build
+        from google.auth import default
+        auth.authenticate_user(scopes=['https://www.googleapis.com/auth/drive.file'])
+        credentials, _ = default()
+        drive_service = build('drive', 'v3', credentials=credentials)
+        logging.info('Drive API service built from Colab auth')
+    except Exception as e:
+        logging.warning('Drive API auth failed (links will not be generated): %s', e)
+
     groq_client = groq.Client(api_key=secrets.get('groq_api_key', ''))
 
     clips = fetch_queued_clips(supabase)

@@ -3,84 +3,37 @@
 import json
 import logging
 import os
-import io
+import shutil
 import requests
 from pathlib import Path
 from typing import Optional
 
+DRIVE_MOUNT = Path('/content/drive/MyDrive')
 SOUND_BASE = 'Velora/sounds'
 
 
 # ---------------------------------------------------------------------------
-# Drive helpers
+# Mounted Drive helpers (no service account needed)
 # ---------------------------------------------------------------------------
 
-def _find_folder_id(drive_service, path):
-    parent_id = 'root'
-    for part in path.split('/'):
-        query = (
-            f"name='{part}' and '{parent_id}' in parents "
-            f"and trashed=false and mimeType='application/vnd.google-apps.folder'"
-        )
-        results = drive_service.files().list(q=query, fields='files(id)').execute()
-        files = results.get('files', [])
-        if not files:
-            return None
-        parent_id = files[0]['id']
-    return parent_id
+def _mounted_path(*parts):
+    return DRIVE_MOUNT.joinpath(*parts)
 
 
-def read_manifest(drive_service, folder_path):
-    folder_id = _find_folder_id(drive_service, folder_path)
-    if not folder_id:
-        logging.warning('Sound folder not found: %s', folder_path)
+def read_manifest(folder_path):
+    manifest_path = _mounted_path(folder_path, 'manifest.json')
+    if not manifest_path.exists():
+        logging.warning('No manifest.json at %s', manifest_path)
         return {'files': []}
-
-    query = f"name='manifest.json' and '{folder_id}' in parents and trashed=false"
-    results = drive_service.files().list(q=query, fields='files(id)').execute()
-    files = results.get('files', [])
-    if not files:
-        logging.warning('No manifest.json in %s', folder_path)
-        return {'files': []}
-
-    from googleapiclient.http import MediaIoBaseDownload
-    request = drive_service.files().get_media(fileId=files[0]['id'])
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
-    return json.loads(fh.getvalue().decode('utf-8'))
-
-
-def _download_drive_file(drive_service, file_id, local_path):
-    request = drive_service.files().get_media(fileId=file_id)
-    with open(local_path, 'wb') as f:
-        from googleapiclient.http import MediaIoBaseDownload
-        downloader = MediaIoBaseDownload(f, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-    return local_path
-
-
-def _groq_json(groq_client, system_prompt, user_prompt):
-    response = groq_client.chat.completions.create(
-        model='llama-3.3-70b-versatile',
-        messages=[
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt}
-        ],
-        response_format={'type': 'json_object'}
-    )
-    return json.loads(response.choices[0].message.content)
+    with open(manifest_path) as f:
+        return json.load(f)
 
 
 # ---------------------------------------------------------------------------
 # SFX selection (AUDIO-01, D-11)
 # ---------------------------------------------------------------------------
 
-def select_sfx(transcript, drive_service, groq_client, secrets):
+def select_sfx(transcript, groq_client, secrets):
     system_prompt = (
         "You are a sound designer analyzing a video transcript. "
         "Identify words or phrases that would benefit from sound effects. "
@@ -93,36 +46,24 @@ def select_sfx(transcript, drive_service, groq_client, secrets):
 
     sfx_results = []
 
-    # Load Drive cache
-    cache_folder = f"{SOUND_BASE}/sfx"
-    cache_folder_id = _find_folder_id(drive_service, cache_folder)
+    # Load local cache
+    cache_path = _mounted_path(SOUND_BASE, 'sfx', 'cache.json')
     cache = {}
-    if cache_folder_id:
-        cache_query = f"name='cache.json' and '{cache_folder_id}' in parents and trashed=false"
-        cache_files = drive_service.files().list(q=cache_query, fields='files(id)').execute()
-        if cache_files.get('files'):
-            cache_blob = _download_drive_file(
-                drive_service, cache_files['files'][0]['id'],
-                '/tmp/sfx_cache.json'
-            )
-            with open(cache_blob) as f:
-                cache = json.load(f)
+    if cache_path.exists():
+        with open(cache_path) as f:
+            cache = json.load(f)
 
     for trigger in triggers[:5]:
         word = trigger.get('word', '')
         sfx_desc = trigger.get('suggested_sfx', 'transition')
 
-        # Check cache first
         if sfx_desc in cache:
             logging.info('SFX cache hit: %s', sfx_desc)
-            sfx_results.append({
-                'path': cache[sfx_desc].get('local_path', ''),
-                'timing': 0,
-                'description': cache[sfx_desc].get('description', sfx_desc)
-            })
-            continue
+            entry = cache[sfx_desc]
+            if os.path.exists(entry.get('path', '')):
+                sfx_results.append(entry)
+                continue
 
-        # Search Freesound
         try:
             resp = requests.get(
                 'https://freesound.org/apiv2/search/text/',
@@ -162,8 +103,8 @@ def select_sfx(transcript, drive_service, groq_client, secrets):
 # Hook music selection (AUDIO-02, D-10)
 # ---------------------------------------------------------------------------
 
-def select_hook(transcript, drive_service, groq_client):
-    manifest = read_manifest(drive_service, f"{SOUND_BASE}/hooks")
+def select_hook(transcript, groq_client):
+    manifest = read_manifest(f"{SOUND_BASE}/hooks")
     if not manifest.get('files'):
         logging.warning('No hook tracks in manifest')
         return {}
@@ -188,15 +129,11 @@ def select_hook(transcript, drive_service, groq_client):
     if not selected:
         selected = manifest['files'][0]
 
-    # Download from Drive
-    folder_id = _find_folder_id(drive_service, f"{SOUND_BASE}/hooks")
-    if folder_id:
-        query = f"name='{selected['filename']}' and '{folder_id}' in parents and trashed=false"
-        files = drive_service.files().list(q=query, fields='files(id)').execute()
-        if files.get('files'):
-            local_path = f"/tmp/hook_{selected['filename']}"
-            _download_drive_file(drive_service, files['files'][0]['id'], local_path)
-            return {'path': local_path, 'filename': selected['filename'], 'metadata': selected}
+    src = _mounted_path(SOUND_BASE, 'hooks', selected['filename'])
+    if src.exists():
+        local_path = f"/tmp/hook_{selected['filename']}"
+        shutil.copy2(str(src), local_path)
+        return {'path': local_path, 'filename': selected['filename'], 'metadata': selected}
 
     return {}
 
@@ -205,8 +142,8 @@ def select_hook(transcript, drive_service, groq_client):
 # Background track selection (AUDIO-03, D-13)
 # ---------------------------------------------------------------------------
 
-def select_background(transcript, drive_service, groq_client):
-    manifest = read_manifest(drive_service, f"{SOUND_BASE}/bg")
+def select_background(transcript, groq_client):
+    manifest = read_manifest(f"{SOUND_BASE}/bg")
     if not manifest.get('files'):
         logging.warning('No background tracks in manifest')
         return {}
@@ -231,14 +168,11 @@ def select_background(transcript, drive_service, groq_client):
     if not selected:
         selected = manifest['files'][0]
 
-    folder_id = _find_folder_id(drive_service, f"{SOUND_BASE}/bg")
-    if folder_id:
-        query = f"name='{selected['filename']}' and '{folder_id}' in parents and trashed=false"
-        files = drive_service.files().list(q=query, fields='files(id)').execute()
-        if files.get('files'):
-            local_path = f"/tmp/bg_{selected['filename']}"
-            _download_drive_file(drive_service, files['files'][0]['id'], local_path)
-            return {'path': local_path, 'filename': selected['filename'], 'metadata': selected}
+    src = _mounted_path(SOUND_BASE, 'bg', selected['filename'])
+    if src.exists():
+        local_path = f"/tmp/bg_{selected['filename']}"
+        shutil.copy2(str(src), local_path)
+        return {'path': local_path, 'filename': selected['filename'], 'metadata': selected}
 
     return {}
 
@@ -269,30 +203,26 @@ def determine_volumes(transcript, sfx_count, groq_client=None):
 
 
 # ---------------------------------------------------------------------------
-# Ensure sound library structure exists on Drive
+# Ensure sound library structure exists on mounted Drive
 # ---------------------------------------------------------------------------
 
-def ensure_sound_library(drive_service):
+def ensure_sound_library():
     for sub in ('sfx', 'hooks', 'bg'):
-        folder_path = f"{SOUND_BASE}/{sub}"
-        folder_id = _find_folder_id(drive_service, folder_path)
-        if not folder_id:
-            parent_id = _find_folder_id(drive_service, SOUND_BASE)
-            if not parent_id:
-                parent_id = drive_service.files().create(
-                    body={
-                        'name': 'sounds',
-                        'mimeType': 'application/vnd.google-apps.folder',
-                        'parents': [_find_folder_id(drive_service, 'Velora') or 'root']
-                    },
-                    fields='id'
-                ).execute()['id']
-            drive_service.files().create(
-                body={
-                    'name': sub,
-                    'mimeType': 'application/vnd.google-apps.folder',
-                    'parents': [parent_id]
-                },
-                fields='id'
-            ).execute()
-            logging.info('Created Drive folder: %s', folder_path)
+        (DRIVE_MOUNT / SOUND_BASE / sub).mkdir(parents=True, exist_ok=True)
+        logging.info('Ensured Drive folder: %s/%s', SOUND_BASE, sub)
+
+
+# ---------------------------------------------------------------------------
+# Shared Groq JSON helper
+# ---------------------------------------------------------------------------
+
+def _groq_json(groq_client, system_prompt, user_prompt):
+    response = groq_client.chat.completions.create(
+        model='llama-3.3-70b-versatile',
+        messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt}
+        ],
+        response_format={'type': 'json_object'}
+    )
+    return json.loads(response.choices[0].message.content)
