@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { storeSecret, getDecryptedSecret } from '../lib/vault';
 import { useNavigate } from 'react-router-dom';
 import type { User as SupaUser } from '@supabase/supabase-js';
+import NotificationBell from '../components/NotificationBell';
 
 type SettingsTab = 'profile' | 'integrations' | 'advanced';
 
@@ -88,6 +89,7 @@ export default function Settings() {
               {saveMessage.text}
             </span>
           )}
+          <NotificationBell />
           <button
             onClick={handleSave}
             className={cn(

@@ -74,3 +74,16 @@ export interface AnalyticsEvent {
   value: number | null;
   recorded_at: string;
 }
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  clip_id: string | null;
+  title: string;
+  message: string;
+  type: 'high_virality' | 'clip_ready' | 'system';
+  virality_score: number | null;
+  is_read: boolean;
+  created_at: string;
+}
+

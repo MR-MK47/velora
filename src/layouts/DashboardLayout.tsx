@@ -4,6 +4,7 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import NotificationBell from '../components/NotificationBell';
 
 export default function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -195,14 +196,17 @@ export default function DashboardLayout() {
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-deep-void relative min-w-0">
         {isMobile && (
-          <div className="h-16 flex items-center px-4 bg-charcoal-ink border-b border-[rgba(255,255,255,0.08)] shrink-0 absolute top-0 left-0 right-0 z-10 lg:hidden">
-            <button
-              onClick={toggleSidebar}
-              className="p-2 rounded-lg text-muted-steel hover:bg-[rgba(255,255,255,0.05)] hover:text-white transition-colors"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <div className="ml-4 font-cabinet font-bold text-lg text-zinc-50">Velora</div>
+          <div className="h-16 flex items-center justify-between px-4 bg-charcoal-ink border-b border-[rgba(255,255,255,0.08)] shrink-0 absolute top-0 left-0 right-0 z-10 lg:hidden">
+            <div className="flex items-center">
+              <button
+                onClick={toggleSidebar}
+                className="p-2 rounded-lg text-muted-steel hover:bg-[rgba(255,255,255,0.05)] hover:text-white transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="ml-4 font-cabinet font-bold text-lg text-zinc-50">Velora</div>
+            </div>
+            <NotificationBell />
           </div>
         )}
         <div className={cn("flex-1 overflow-hidden", isMobile && "mt-16")}>
@@ -212,3 +216,4 @@ export default function DashboardLayout() {
     </div>
   );
 }
+

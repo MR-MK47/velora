@@ -1,13 +1,15 @@
 import { Calendar } from 'lucide-react';
+import NotificationBell from '../components/NotificationBell';
 
 export default function Schedule() {
   return (
     <div className="flex-1 overflow-y-auto">
-      <header className="sticky top-0 bg-[#09090B]/80 backdrop-blur-md z-40 flex items-center px-8 py-4 border-b border-[rgba(255,255,255,0.08)]">
+      <header className="sticky top-0 bg-[#09090B]/80 backdrop-blur-md z-40 flex items-center justify-between px-8 py-4 border-b border-[rgba(255,255,255,0.08)]">
         <div className="flex items-center gap-3">
           <Calendar className="w-5 h-5 text-primary" />
           <h2 className="font-cabinet text-xl font-bold text-zinc-50 tracking-tight">Schedule</h2>
         </div>
+        <NotificationBell />
       </header>
 
       <div className="p-8 max-w-5xl mx-auto">

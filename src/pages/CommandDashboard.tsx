@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useCampaigns } from '../hooks/useCampaigns';
 import type { Campaign } from '../lib/types/database';
+import NotificationBell from '../components/NotificationBell';
 
 interface Stats {
   totalClips: number;
@@ -69,12 +70,15 @@ export default function CommandDashboard() {
           <Terminal className="w-5 h-5 text-primary" />
           <h2 className="font-cabinet text-xl font-bold text-zinc-50 tracking-tight">Command Dashboard</h2>
         </div>
-        <Link to="/app/campaigns">
-          <button className="bg-primary hover:bg-white text-zinc-950 px-4 py-2 flex items-center gap-2 rounded-lg text-sm font-semibold active:translate-y-[1px] transition-all">
-            <Plus className="w-4 h-4" />
-            New Campaign
-          </button>
-        </Link>
+        <div className="flex items-center gap-4">
+          <NotificationBell />
+          <Link to="/app/campaigns">
+            <button className="bg-primary hover:bg-white text-zinc-950 px-4 py-2 flex items-center gap-2 rounded-lg text-sm font-semibold active:translate-y-[1px] transition-all">
+              <Plus className="w-4 h-4" />
+              New Campaign
+            </button>
+          </Link>
+        </div>
       </header>
 
       <section className="p-8 max-w-7xl mx-auto space-y-6">

@@ -398,6 +398,22 @@ For segments, return: {"segments":[{"start_ts":0,"end_ts":0,"hook_title":"...","
       platform: null,
       value: segment.virality_score,
     });
+
+    if (segment.virality_score && segment.virality_score >= 80) {
+      try {
+        await supabaseAdmin.from('notifications').insert({
+          user_id: userId,
+          clip_id: clipId,
+          title: '🔥 High-Virality Clip Identified!',
+          message: `New viral segment "${segment.hook_title || 'Clip Hook'}" identified with virality score of ${segment.virality_score}/100!`,
+          type: 'high_virality',
+          virality_score: segment.virality_score,
+          is_read: false,
+        });
+      } catch (nErr) {
+        console.warn('[ingest] Notification insert warning:', nErr);
+      }
+    }
   }
 
   console.log('[ingest] Step: clip insert done, clipIds:', clipIds.length);

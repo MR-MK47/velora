@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import ExtractionModal from '../components/ExtractionModal';
 import CreateCampaignModal from '../components/CreateCampaignModal';
 import ClipGrid from '../components/ClipGrid';
+import NotificationBell from '../components/NotificationBell';
 import { useCampaigns } from '../hooks/useCampaigns';
 import { useClips } from '../hooks/useClips';
 import type { Campaign, Clip } from '../lib/types/database';
@@ -40,7 +41,7 @@ export default function CampaignWorkspace() {
 
       {/* Header */}
       <header className={cn(
-        "relative w-full shrink-0 border-b border-[rgba(255,255,255,0.08)] bg-zinc-950 flex flex-col justify-end p-8 overflow-hidden transition-all duration-300",
+        "relative w-full shrink-0 border-b border-[rgba(255,255,255,0.08)] bg-zinc-950 flex flex-col justify-end p-8 overflow-visible transition-all duration-300 z-50",
         selectedCampaign ? "min-h-[160px]" : "min-h-[220px]"
       )}>
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.1),transparent_70%)] pointer-events-none" />
@@ -84,23 +85,26 @@ export default function CampaignWorkspace() {
             </div>
           )}
 
-          {selectedCampaign ? (
-            <button
-              onClick={() => setIsExtractModalOpen(true)}
-              className="group flex items-center gap-2 px-6 py-3 bg-primary text-zinc-950 font-bold rounded-lg hover:bg-white active:translate-y-[1px] transition-all"
-            >
-              <Wand2 className="w-4 h-4" />
-              Create Clips
-            </button>
-          ) : (
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="group flex items-center gap-2 px-6 py-3 bg-primary text-zinc-950 font-bold rounded-lg hover:bg-white active:translate-y-[1px] transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              New Campaign
-            </button>
-          )}
+          <div className="flex items-center gap-4">
+            <NotificationBell />
+            {selectedCampaign ? (
+              <button
+                onClick={() => setIsExtractModalOpen(true)}
+                className="group flex items-center gap-2 px-6 py-3 bg-primary text-zinc-950 font-bold rounded-lg hover:bg-white active:translate-y-[1px] transition-all"
+              >
+                <Wand2 className="w-4 h-4" />
+                Create Clips
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="group flex items-center gap-2 px-6 py-3 bg-primary text-zinc-950 font-bold rounded-lg hover:bg-white active:translate-y-[1px] transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                New Campaign
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -166,7 +170,7 @@ export default function CampaignWorkspace() {
       ) : (
         <>
           {/* Filters for Selected Campaign */}
-          <div className="px-8 py-4 bg-charcoal-ink border-b border-[rgba(255,255,255,0.08)] flex justify-between items-center sticky top-0 z-30">
+          <div className="px-8 py-4 bg-charcoal-ink border-b border-[rgba(255,255,255,0.08)] flex justify-between items-center sticky top-0 z-20">
             <div className="flex gap-6 relative">
               {tabs.map((tab) => (
                 <button
